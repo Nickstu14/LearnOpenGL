@@ -6,15 +6,24 @@
 #include <string>
 #include <sstream>
 
+#include "Renderer.h"
+#include "IndexBuffer.h"
+#include "VertexBuffer.h"
+#include "VertexArray.h"
+
+
 struct ShaderProgramSource
 {
 	std::string VertexSource;
 	std::string FragmentSource;
 };
 
+
+
 static unsigned int CreateShader(const std::string& vertexShader, const std::string& fragmentShader);
 static unsigned int CompileShader(unsigned int type, const std::string& source);
 static ShaderProgramSource ParseShader(const std::string& filepath);
+
 
 
 int main(void)
@@ -25,7 +34,9 @@ int main(void)
 	if (!glfwInit())
 		return -1;
 
-
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
 	/* Create a windowed mode window and its OpenGL context */
 	window = glfwCreateWindow(640, 480, "Hello World", NULL, NULL);
@@ -38,81 +49,122 @@ int main(void)
 	/* Make the window's context current */
 	glfwMakeContextCurrent(window);
 
+	glfwSwapInterval(1);
+
 	if (glewInit() != GLEW_OK)
 		std::cout << "Error" << std::endl;
 
 	std::cout << glGetString(GL_VERSION) << std::endl;
-
-	float position[6] = {
-		-0.5f, -0.5f,
-		0.5f,0.5f,
-		-0.5f,0.5f
-
-	};
-
-	unsigned int buffer;
-	glGenBuffers(1, &buffer);
-	glBindBuffer(GL_ARRAY_BUFFER, buffer);
-	glBufferData(GL_ARRAY_BUFFER, 6 * sizeof(float), position, GL_STATIC_DRAW);
-
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(float) * 2, 0);
-
-	ShaderProgramSource source = ParseShader("res/shaders/Basic.shader");
-	std::cout << "Vertex" << std::endl;
-	std::cout << source.VertexSource << std::endl;
-	std::cout << "Fragment" << std::endl;
-	std::cout << source.FragmentSource << std::endl;
-	unsigned int shader = CreateShader(source.VertexSource, source.FragmentSource);
-	glUseProgram(shader);
-
-	/* Loop until the user closes the window */
-	while (!glfwWindowShouldClose(window))
 	{
-		/* Render here */
-		glClear(GL_COLOR_BUFFER_BIT);
+		float position[] = {
+			-0.5f, -0.5f,
+			 0.5f, -0.5f,
+			 0.5f,  0.5f,
+			-0.5f,  0.5f,
+		};
 
-		glDrawArrays(GL_TRIANGLES, 0, 3);
+		unsigned int indices[] = {
+			0,1,2,
+			2,3,0
+		};
+
+		unsigned int vao;
+		GLCall(glGenVertexArrays(1, &vao));
+		GLCall(glBindVertexArray(vao));
 
 
-		/* Swap front and back buffers */
-		glfwSwapBuffers(window);
+		VertexArray va;
+		VertexBuffer vb(position, 4 * 2 * sizeof(float));
 
-		/* Poll for and process events */
-		glfwPollEvents();
+		VertexBufferLayout layout;
+		layout.Push<float>(2);
+		va.AddBuffer(vb,layout);
+
+
+		IndexBuffer ib(indices, 6);
+
+		ShaderProgramSource source = ParseShader("res/shaders/Basic.shader");
+
+		unsigned int shader = CreateShader(source.VertexSource, source.FragmentSource);
+		GLCall(glUseProgram(shader));
+
+		GLCall(int location = glGetUniformLocation(shader, "u_Colour"));
+		ASSERT(location != -1);
+		GLCall(glUniform4f(location, 0.8f, 0.3f, 0.8f, 1.0f));
+
+		GLCall(glBindVertexArray(0));
+		GLCall(glUseProgram(0));
+		GLCall(glBindBuffer(GL_ARRAY_BUFFER, 0));
+		GLCall(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0));
+
+
+		float r = 0.0f, b = 0.0f;
+		float increment = 0.05f, incrementb = 0.05f;
+		/* Loop until the user closes the window */
+		while (!glfwWindowShouldClose(window))
+		{
+			/* Render here */
+			glClear(GL_COLOR_BUFFER_BIT);
+
+			GLCall(glUseProgram(shader));
+			GLCall(glUniform4f(location, r, b, 0.8f, 1.0f));
+
+			va.Bind();
+			ib.Bind();
+
+			GLCall(glDrawElements(GL_TRIANGLES, ib.GetCount(), GL_UNSIGNED_INT, nullptr));
+
+			if (r > 1.0f)
+				increment = -0.05f;
+			else if (r < 0.0f)
+				increment = 0.05f;
+
+			if (b > 1.0f)
+				incrementb = -0.01f;
+			else if (b < 0.0f)
+				incrementb = 0.01f;
+
+			r += increment;
+			b += incrementb;
+
+
+			/* Swap front and back buffers */
+			glfwSwapBuffers(window);
+
+			/* Poll for and process events */
+			glfwPollEvents();
+		}
+		GLCall(glDeleteProgram(shader));
 	}
 
 	glfwTerminate();
-
-	glDeleteProgram(shader);
 	return 0;
 }
 
 static unsigned int CreateShader(const std::string& vertexShader, const std::string& fragmentShader)
 {
-	unsigned int program = glCreateProgram();
-	unsigned int vs = CompileShader(GL_VERTEX_SHADER, vertexShader);
-	unsigned int fs = CompileShader(GL_FRAGMENT_SHADER, fragmentShader);
+	GLCall(unsigned int program = glCreateProgram());
+	GLCall(unsigned int vs = CompileShader(GL_VERTEX_SHADER, vertexShader));
+	GLCall(unsigned int fs = CompileShader(GL_FRAGMENT_SHADER, fragmentShader));
 
-	glAttachShader(program, vs);
-	glAttachShader(program, fs);
-	glLinkProgram(program);
-	glValidateProgram(program);
+	GLCall(glAttachShader(program, vs));
+	GLCall(glAttachShader(program, fs));
+	GLCall(glLinkProgram(program));
+	GLCall(glValidateProgram(program));
 
-	glDeleteShader(vs);
-	glDeleteShader(fs);
+	GLCall(glDeleteShader(vs));
+	GLCall(glDeleteShader(fs));
 
 	return program;
 
 }
 
-
 static unsigned int CompileShader(unsigned int type, const std::string& source)
 {
-	unsigned int id = glCreateShader(type);
+	GLCall(unsigned int id = glCreateShader(type));
 	const char* src = source.c_str();
-	glShaderSource(id, 1, &src, nullptr);
-	glCompileShader(id);
+	GLCall(glShaderSource(id, 1, &src, nullptr));
+	GLCall(glCompileShader(id));
 
 
 	//TODO: Error handling
@@ -121,12 +173,12 @@ static unsigned int CompileShader(unsigned int type, const std::string& source)
 	if (result == GL_FALSE)
 	{
 		int length;
-		glGetShaderiv(id, GL_INFO_LOG_LENGTH, &length);
+		GLCall(glGetShaderiv(id, GL_INFO_LOG_LENGTH, &length));
 		char* message = (char*)alloca(length * sizeof(char));
-		glGetShaderInfoLog(id, length, &length, message);
+		GLCall(glGetShaderInfoLog(id, length, &length, message));
 		std::cout << "Failed to compile " << (type == GL_VERTEX_SHADER ? "Vertex" : "Fragment") << "shader!" << std::endl;
 		std::cout << message << std::endl;
-		glDeleteShader(id);
+		GLCall(glDeleteShader(id));
 		return 0;
 	}
 
@@ -165,5 +217,6 @@ static ShaderProgramSource ParseShader(const std::string& filepath)
 
 	}
 
-	return { ss[0].str(), ss[1].str() };
+	return{ ss[0].str(), ss[1].str() };
 }
+
